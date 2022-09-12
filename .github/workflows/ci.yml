@@ -1,0 +1,75 @@
+name: ci
+
+on:
+  push:
+    tags:
+      - 'v*'
+
+jobs:
+  docker:
+    runs-on: ubuntu-latest
+
+    strategy:
+      matrix:
+        base_image_tag: [9,9.0,9.0.20220712]
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v3
+
+      - name:
+        id: buildenv
+        run: |
+          IMAGE_NAME=$(echo ${GITHUB_REPOSITORY#*/} | sed 's/docker-//g')
+          echo  "::set-output name=image_name::${IMAGE_NAME}"
+          echo  "::set-output name=owner::${GITHUB_REPOSITORY_OWNER}"
+          echo  "::set-output name=build_date::$(date -u +'%Y-%m-%dT%H:%M:%SZ')"
+          echo  "::set-output name=build_sha::${GITHUB_SHA:0:12}"
+          echo  "::set-output name=build_version::${GITHUB_REF_NAME}"
+
+      - name: Docker meta
+        id: meta
+        uses: docker/metadata-action@v4
+        with:
+          images: |
+            ${{ steps.buildenv.outputs.owner }}/${{ steps.buildenv.outputs.image_name }}
+          labels: |
+            org.opencontainers.artifact.created=${{ steps.buildenv.outputs.build_date }}
+            org.opencontainers.artifact.description=RockyLinux ${{ matrix.base_image_tag }} image for testing Ansible playbooks and roles
+            org.opencontainers.image.created=${{ steps.buildenv.outputs.build_date }}
+            org.opencontainers.image.authors=${{ steps.buildenv.outputs.owner }}
+            org.opencontainers.image.url=https://hub.docker.com/${{ steps.buildenv.outputs.owner }}/${{ steps.buildenv.outputs.image_name }}:${{ steps.buildenv.outputs.build_version }}
+            org.opencontainers.image.documentation=${{ env.GITHUB_SERVER_URL }}/${{ env.GITHUB_REPOSITORY }}/README.md
+            org.opencontainers.image.title=${{ steps.buildenv.outputs.image_name }}
+            org.opencontainers.image.description=RockyLinux ${{ matrix.base_image_tag }} image for testing Ansible playbooks and roles
+            com.${{ steps.buildenv.outputs.owner }}.image.sha=${{ steps.buildenv.outputs.build_sha }}
+            com.${{ steps.buildenv.outputs.owner }}.image.version=${{ steps.buildenv.outputs.build_version }}
+          flavor: |
+            latest=auto
+            prefix=${{ matrix.base_image_tag }}-
+          tags: |
+            type=sha,enable=true,priority=100,prefix=${{ matrix.base_image_tag }}-,suffix=,format=short
+            type=schedule,pattern={{date 'YYYYMMDD'}}
+            type=ref,event=branch
+            type=ref,event=tag
+            type=ref,event=pr
+            type=semver,pattern={{version}},value=${{ matrix.base_image_tag }}
+            type=semver,pattern={{raw}}
+            type=semver,pattern={{version}}
+
+      - name: Login to DockerHub
+        if: github.event_name != 'pull_request'
+        uses: docker/login-action@v2
+        with:
+          username: ${{ secrets.DOCKERHUB_USERNAME }}
+          password: ${{ secrets.DOCKERHUB_TOKEN }}
+
+      - name: Build and push
+        uses: docker/build-push-action@v3
+        with:
+          context: .
+          push: ${{ github.event_name != 'pull_request' }}
+          build-args: |
+            BASE_IMAGE_TAG=${{ matrix.base_image_tag }}
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}
