@@ -23,7 +23,7 @@ RUN cd /lib/systemd/system/sysinit.target.wants ; \
 RUN dnf -y install rpm dnf-plugins-core ; \
   dnf -y install epel-release ; \
   dnf -y update ; \
-  dnf -y install ; \
+  dnf -y install \
     sudo \
     which \
     python3-pip \
